@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import division
+import sklearn
 import matplotlib.pyplot as plt
 import numpy as np
 import itertools
@@ -8,12 +9,11 @@ import networkx as nx
 import pandas as pd
 import hashlib
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import cross_validate
 from sklearn.tree import export_graphviz
 import pydot
-
-print('The scikit-learn version is {}.'.format(sklearn.__version__))
 
 def plot_confusion_matrix(cm, classes,
                           normalize=False,
@@ -187,7 +187,30 @@ def print_score_summary(scores):
     print "Baseline mean: ", np.mean(scores['test_baseline'])
     print "Baseline std: ", np.std(scores['test_baseline'])
 
-def run_cross_validation(features, target):
+def print_score_summary_classification(scores):
+    return True
+
+def run_cross_validation_classification(features, target):
+
+    def class_weight(label):
+        return len([i for i in target if i == label])
+
+    class_weights = {
+        0: (class_weight(1)/len(target))*1E0,
+        1: (class_weight(0)/len(target))*1E7
+    }
+
+    rf = RandomForestClassifier(n_estimators = 500, class_weight=class_weights)
+    scores = cross_validate(estimator=rf, X=features, y=target, cv=10,
+                            scoring = {
+                                'abs': 'neg_mean_absolute_error'
+                            },
+                            return_train_score=False, return_estimator = True)
+    # Use best estimator to do some visual reports
+    rf = scores['estimator'][0]
+    return [rf, scores]
+
+def run_cross_validation_regression(features, target):
     average_target = np.average(target)
 
     def baseline_score_function (y_true, y_pred):
@@ -283,7 +306,7 @@ def join_predicted_df(
     joined_predicted_df = predicted_df.set_index("sha256_id").join(df.set_index("sha256_id"))
     return [predicted_df, joined_predicted_df]
 
-def render_image_first_decision_tree(rf, feature_list):
+def render_image_first_decision_tree(rf, feature_list, output_filename):
     # Pull out one tree from the forest
     tree = rf.estimators_[0]
     # Export the image to a dot file
@@ -292,4 +315,8 @@ def render_image_first_decision_tree(rf, feature_list):
     # Use dot file to create a graph
     (graph, ) = pydot.graph_from_dot_file('tree.dot')
     # Write graph to a png file
-    graph.write_png('tree.png')
+    graph.write_png(output_filename)
+    print "Output image: ", output_filename
+
+def has_link_to_node(G, node):
+    return dict(map(lambda n: [n, reduce(lambda t, i: (t+1)%2 if i == node else t, nx.all_neighbors(G, n), 0)], G.nodes_iter()))
