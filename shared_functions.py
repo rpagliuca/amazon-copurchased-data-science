@@ -14,8 +14,9 @@ from sklearn.metrics import make_scorer
 from sklearn.model_selection import cross_validate
 from sklearn.tree import export_graphviz
 import pydot
+import test_data
 
-def plot_confusion_matrix(cm, classes,
+def plot_confusion_matrix(cm, classes, std=False,
                           normalize=False,
                           title='Confusion matrix',
                           cmap=plt.cm.Blues):
@@ -24,12 +25,13 @@ def plot_confusion_matrix(cm, classes,
     Normalization can be applied by setting `normalize=True`.
     """
     if normalize:
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        normalization = cm.sum(axis=1)[:, np.newaxis]
+        cm = cm.astype('float') / normalization
+        if std is not False:
+            std = std.astype('float') / normalization
         print("Normalized confusion matrix")
     else:
         print('Confusion matrix, without normalization')
-
-    print(cm)
 
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
     plt.title(title)
@@ -38,11 +40,18 @@ def plot_confusion_matrix(cm, classes,
     plt.xticks(tick_marks, classes, rotation=45)
     plt.yticks(tick_marks, classes)
 
-    fmt = '.2f' if normalize else 'd'
     thresh = cm.max() / 2.
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        plt.text(j, i, format(cm[i, j], fmt),
+        if std is not False:
+            text = '%.2f\n(%.2f)' % (cm[i, j], std[i, j])
+        else:
+            if normalize:
+                text = '%.2f' % (cm[i, j])
+            else:
+                text = '%i' % (cm[i, j])
+        plt.text(j, i, text,
                  horizontalalignment="center",
+                 verticalalignment='center',
                  color="white" if cm[i, j] > thresh else "black")
 
     plt.tight_layout()
@@ -112,8 +121,10 @@ def prepare_datasets(df, numeric_features, categorical_features, target_column):
     print "Categorical features: ", categorical_features
     print "Target column: ", target_column
 
+    id = ['sha256_id'] if 'sha256_id' in df else []
+
     df_with_dummies = pd.get_dummies(
-            df[['sha256_id'] + numeric_features + categorical_features + [target_column]],
+            df[id + numeric_features + categorical_features + [target_column]],
             columns=categorical_features,
             drop_first=True
     )
@@ -187,10 +198,13 @@ def print_score_summary(scores):
     print "Baseline mean: ", np.mean(scores['test_baseline'])
     print "Baseline std: ", np.std(scores['test_baseline'])
 
-def print_score_summary_classification(scores):
-    return True
-
 def run_cross_validation_classification(features, target):
+
+    X = features
+    y = target
+
+    average_target = 1
+    group_counts = []
 
     def class_weight(label):
         return len([i for i in target if i == label])
@@ -200,17 +214,31 @@ def run_cross_validation_classification(features, target):
         1: (class_weight(0)/len(target))*1E7
     }
 
-    rf = RandomForestClassifier(n_estimators = 500, class_weight=class_weights)
-    scores = cross_validate(estimator=rf, X=features, y=target, cv=10,
+    #print class_weights
+
+    #class_weights = {
+    #    0: 0.5,
+    #    1: 0.5
+    #}
+
+    #class_weights = 'balanced'
+
+    cv = sklearn.model_selection.StratifiedKFold(n_splits=10)
+    splits = list(cv.split(X, y))
+
+    rf = RandomForestClassifier(n_estimators = 500, class_weight=class_weights, n_jobs = -1)
+    scores = cross_validate(estimator=rf, X=features, y=target, cv=splits,
                             scoring = {
-                                'abs': 'neg_mean_absolute_error'
+                                'abs': 'neg_mean_absolute_error',
                             },
                             return_train_score=False, return_estimator = True)
-    # Use best estimator to do some visual reports
-    rf = scores['estimator'][0]
-    return [rf, scores]
+
+    return [scores['estimator'], splits, scores]
 
 def run_cross_validation_regression(features, target):
+
+    X = features
+    y = target
     average_target = np.average(target)
 
     def baseline_score_function (y_true, y_pred):
@@ -228,13 +256,16 @@ def run_cross_validation_regression(features, target):
         return np.mean(errors_relative)
 
 
-    rf = RandomForestRegressor(n_estimators = 50, n_jobs = -1)
+    rf = RandomForestRegressor(n_estimators = 500, n_jobs = -1)
 
     scorer = make_scorer(baseline_score_function)
     scorer2 = make_scorer(relative_error_function)
     scorer3 = make_scorer(baseline_relative_error_function)
 
-    scores = cross_validate(estimator=rf, X=features, y=target, cv=10,
+    cv = sklearn.model_selection.KFold(n_splits=10)
+    splits = list(cv.split(X, y))
+
+    scores = cross_validate(estimator=rf, X=features, y=target, cv=splits,
                             scoring = {
                                 'abs': 'neg_mean_absolute_error',
                                 'baseline': scorer,
@@ -245,12 +276,18 @@ def run_cross_validation_regression(features, target):
 
     # Use best estimator to do some visual reports
     rf = scores['estimator'][0]
-    return [rf, scores]
+    return [scores['estimator'], splits, scores]
 
 def plot_predicted_vs_real_price(test_target, test_predictions, target):
-    plt.figure(figsize=(8,8), dpi=130)
+    plot_predicted_vs_real_price_start(np.max(target))
     plt.scatter(test_target, test_predictions, 100, alpha=0.05, edgecolors="none")
-    baseline = [0, np.max(target)]
+    plot_predicted_vs_real_price_end()
+
+def plot_predicted_vs_real_price_start(maxval):
+    #plt.xlim(0, 150)
+    #plt.ylim(0, 150)
+    plt.figure(figsize=(8,8), dpi=130)
+    baseline = [0, maxval]
     plt.plot(baseline, baseline, "--", color="green", label = u"Preço previsto = Preço real")
     ax = plt.gca()
     ax.set_ylabel(u"Preço previsto (R$)")
@@ -258,8 +295,8 @@ def plot_predicted_vs_real_price(test_target, test_predictions, target):
     ax.legend()
     plt.title(u"Preço previsto vs. Preço real")
     plt.axes().set_aspect('equal', 'datalim')
-    #plt.xlim(0, 150)
-    #plt.ylim(0, 150)
+
+def plot_predicted_vs_real_price_end():
     plt.show()
 
 def print_mean_absolute_error(test_predictions, test_target, average_target):
@@ -320,3 +357,144 @@ def render_image_first_decision_tree(rf, feature_list, output_filename):
 
 def has_link_to_node(G, node):
     return dict(map(lambda n: [n, reduce(lambda t, i: (t+1)%2 if i == node else t, nx.all_neighbors(G, n), 0)], G.nodes_iter()))
+
+def get_most_important_features(estimators, feature_list):
+    rows = []
+    for estimator in estimators:
+        rows.append(estimator.feature_importances_)
+    df = pd.DataFrame(rows, columns=feature_list)
+    std = df.std() * 100
+    mean = df.mean() * 100
+    relative_std = std/mean
+    importance = zip(feature_list, mean, std, relative_std)
+    importance.sort(key=lambda x:-x[1])
+    return pd.DataFrame(importance, columns=['feature', 'mean importance', 'std', 'std/mean']).head(20)
+
+def plot_splits_confusion_matrices(X, y, splits, estimators, threshold = 0.5):
+
+    rows = []
+
+    print 'Splits quantity: ', len(splits)
+    print 'Splits lenghts: ', [len(split[1]) for split in splits]
+    print 'X shape: ', X.shape
+    print 'y shape: ', y.shape
+
+    confusion_matrices = []
+    for i in range(len(splits)):
+        test_indices = splits[i][1]
+        y_pred = estimators[i].predict_proba(X[test_indices])
+        cnf_matrix = sklearn.metrics.confusion_matrix(
+            y[test_indices],
+            [1 if p[1] >= threshold else 0 for p in y_pred]
+        )
+        confusion_matrices.append(cnf_matrix)
+
+        plt.figure()
+        plot_confusion_matrix(cnf_matrix, normalize=False, classes=['Does not have link to node 1', 'Has link to node 1'],
+                              title=('Split %i - Confusion matrix for probability threshold p = %.2f' % (i+1, threshold)))
+        plt.show()
+
+    cf2d = [row.reshape(4) for row in confusion_matrices]
+
+    df = pd.DataFrame(cf2d, columns=['tn', 'fp', 'fn', 'tp'])
+    cnf_matrix_mean = df.mean().values.reshape(2, 2)
+    cnf_matrix_std = df.std().values.reshape(2, 2)
+
+    plt.figure()
+    plot_confusion_matrix(cnf_matrix_mean, std = cnf_matrix_std, normalize=True, classes=['Does not have link to node 1', 'Has link to node 1'],
+                          title=('Mean confusion matrix for probability threshold p = %.2f' % (threshold)))
+    plt.show()
+
+def get_all_predictions_from_splits(X, y, splits, estimators):
+    rows = []
+
+    print 'Splits quantity: ', len(splits)
+    print 'Splits lenghts: ', [len(split[1]) for split in splits]
+    print 'X shape: ', X.shape
+    print 'y shape: ', y.shape
+
+    all_preds = []
+    for i in range(len(splits)):
+        test_indices = splits[i][1]
+        if 'predict_proba' in dir(estimators[i]):
+            y_pred = [p[1] for p in estimators[i].predict_proba(X[test_indices])]
+        else:
+            y_pred = estimators[i].predict(X[test_indices])
+        all_preds = all_preds + zip(test_indices, y_pred)
+
+    all_preds.sort(key = lambda x: x[0])
+
+    return [x[1] for x in all_preds]
+
+def plot_splits_predicted_vs_real(y, y_pred):
+    plot_predicted_vs_real_price(y, y_pred, y)
+
+def plot_histogram(sets, ymax = False):
+
+    if not ymax:
+        ymax = max([max(x[1]) for x in sets])
+
+    plt.figure(figsize=(8,8), dpi=130)
+    max_frequency = 0
+
+    for dataset in sets:
+        y = dataset[1]
+        count = len(y)
+        hist = np.histogram(y, np.linspace(0, ymax, 10))
+        normalized_hist = hist[0]/count
+        centers = np.convolve(hist[1], [0.5, 0.5])
+        centers = centers[1:-1]
+        #plt.bar(centers, normalized_hist, width=(centers[1]-centers[0])*0.95)
+        plt.plot(centers, normalized_hist, label = dataset[0])
+        max_frequecy = max([max_frequency, max(hist[0]/count) * 1.1])
+
+    ylim = max_frequency
+    plt.legend(loc='lower right')
+    plt.ylabel(u'Frequência relativa')
+    plt.xlabel(u'Probabilidade estimada de ligação')
+    plt.show()
+
+
+def print_classification_probability_distribution(y, y_pred):
+    y_pred = np.array(y_pred)
+    print y_pred.shape
+    class0 = [x == 0 for x in y]
+    class1 = [x == 1 for x in y]
+    plot_histogram([[u'Sem ligação', y_pred[class0]], [u'Com ligação', y_pred[class1]]])
+
+def plot_roc_curve(target, y_pred):
+    steps = 1001
+    x_data = []
+    y_data = []
+    closest_to_optimal_distance = 99999
+    closest_to_optimal_probability = None
+    closest_to_optimal_point = None
+
+    for r in range(0, steps):
+        s = 1/(steps - 1) * r
+        m = sklearn.metrics.confusion_matrix(target, map(lambda p: 1 if p >= s else 0, y_pred))
+        tn = m[0][0]
+        fp = m[0][1]
+        fn = m[1][0]
+        tp = m[1][1]
+        tpr = tp/(tp+fn)
+        fpr = fp/(fp+tn)
+        y_data.append(tpr)
+        x_data.append(fpr)
+        distance = ((fpr - 0)**2.0 + (tpr - 1)**2.0)**0.5
+        if distance < closest_to_optimal_distance:
+            closest_to_optimal_point = [fpr, tpr]
+            closest_to_optimal_distance = distance
+            closest_to_optimal_probability = s
+    plt.figure(figsize=(8,8), dpi=130)
+    plt.plot(x_data, y_data)
+    plt.plot([0, 1], [0, 1])
+    plt.plot(closest_to_optimal_point[0], closest_to_optimal_point[1], "bx", label=u"Limiar de probabilidade = " + str(closest_to_optimal_probability))
+    plt.axes().set_aspect('equal')
+    plt.axes().set_ylabel(u"Taxa de verdadeiros positivos")
+    plt.axes().set_xlabel(u"Taxa de falsos positivos")
+    plt.axes().legend()
+    plt.title(u"Curva ROC da variação do limiar de\nprobabilidade para classificação de positivos")
+    plt.axes().set_aspect('equal')
+    plt.show()
+    return closest_to_optimal_probability
