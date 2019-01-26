@@ -10,6 +10,10 @@ import hashlib
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import cross_validate
+from sklearn.tree import export_graphviz
+import pydot
+
+print('The scikit-learn version is {}.'.format(sklearn.__version__))
 
 def plot_confusion_matrix(cm, classes,
                           normalize=False,
@@ -253,3 +257,39 @@ def print_mean_absolute_error(test_predictions, test_target, average_target):
     print('Mean relative absolute error using average: ', round(np.mean(errors_baseline_relative), 2))
     print('Std relative prediction error using average: ', round(np.std(errors_baseline_relative), 2))
     return [errors, errors_baseline, errors_relative, errors_baseline_relative]
+
+def join_predicted_df(
+    df,
+    test_features,
+    test_target,
+    test_predictions,
+    errors,
+    errors_relative,
+    errors_baseline,
+    errors_baseline_relative
+):
+    data = {
+        "all_features": test_features.tolist(),
+        "sha256_id": test_features[:, 0],
+        "target": test_target,
+        "prediction": test_predictions,
+        "error": errors,
+        "error_relative": errors_relative,
+        "error_baseline": errors_baseline,
+        "error_baseline_relative": errors_baseline_relative
+    }
+    predicted_df = pd.DataFrame(data = data)
+    joined_predicted_df = predicted_df
+    joined_predicted_df = predicted_df.set_index("sha256_id").join(df.set_index("sha256_id"))
+    return [predicted_df, joined_predicted_df]
+
+def render_image_first_decision_tree(rf, feature_list):
+    # Pull out one tree from the forest
+    tree = rf.estimators_[0]
+    # Export the image to a dot file
+    export_graphviz(tree, out_file = 'tree.dot',
+                    feature_names = feature_list, rounded = True)
+    # Use dot file to create a graph
+    (graph, ) = pydot.graph_from_dot_file('tree.dot')
+    # Write graph to a png file
+    graph.write_png('tree.png')
