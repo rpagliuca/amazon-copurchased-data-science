@@ -101,9 +101,9 @@ def add_sha256_column_from_id(df):
 
 def accumulated_distribution(histogram):
     accumulated = []
-    total = 0
+    total = 0.0
     for value in histogram:
-        total += value
+        total += float(value)
         accumulated.append(total)
     return accumulated
 
@@ -155,25 +155,19 @@ def prepare_datasets(df, numeric_features, categorical_features, target_column):
     return [target, features, feature_list, test_features, test_target]
 
 def plot_relative_error_distribution(predicted_df):
-    count = len(predicted_df.error_relative)
-    hist_predicted = np.histogram(predicted_df.error_relative, np.linspace(0, 2, 20))
-    normalized_hist_predicted = hist_predicted[0]/count
-    hist_baseline = np.histogram(predicted_df.error_baseline_relative, np.linspace(0, 2, 20))
-    normalized_hist_baseline = hist_baseline[0]/count
-    centers = np.convolve(hist_predicted[1], [0.5, 0.5])
-    centers = centers[1:-1]
-    plt.bar(centers, normalized_hist_predicted, width=(centers[1]-centers[0])*0.95)
-    ylim = max(hist_predicted[0]/count) * 1.1
-    plt.ylim(0, ylim)
-    plt.show()
-    plt.bar(centers, normalized_hist_baseline, width=(centers[1]-centers[0])*0.95)
-    plt.ylim(0, ylim)
-    plt.show()
-    return [centers, normalized_hist_predicted, normalized_hist_baseline]
+    sets = [
+        ['Predicted', predicted_df.error_relative],
+        ['Baseline Average', predicted_df.error_baseline_relative],
+        ['Baseline Median', predicted_df.error_baseline_median_relative]
+    ]
+    centers, hists = plot_histogram(sets, 2)
+    return [centers, hists[0][0], hists[1][0], hists[2][0]]
 
-def plot_accumulated_relative_error(centers, normalized_hist_predicted, normalized_hist_baseline):
+def plot_accumulated_relative_error(centers, normalized_hist_predicted, normalized_hist_baseline, normalized_hist_baseline_median):
+    plt.figure(figsize=(8,8), dpi=130)
     plt.plot(centers, accumulated_distribution(normalized_hist_predicted), label='Predicted')
-    plt.plot(centers, accumulated_distribution(normalized_hist_baseline), label='Baseline')
+    plt.plot(centers, accumulated_distribution(normalized_hist_baseline), label='Baseline Average')
+    plt.plot(centers, accumulated_distribution(normalized_hist_baseline_median), label='Baseline Median')
     plt.xlabel('Relative error')
     plt.ylabel('Accumulated fraction')
     plt.legend(loc='lower right')
@@ -185,8 +179,11 @@ def print_score_summary(scores):
     print "RF relative abs std: ", np.std(scores['test_relative'])
 
     #print "Baseline: ", scores['test_baseline']
-    print "Baseline relative mean: ", np.mean(scores['test_baseline_relative'])
-    print "Baseline relative std: ", np.std(scores['test_baseline_relative'])
+    print "Baseline (average) relative mean: ", np.mean(scores['test_baseline_relative'])
+    print "Baseline (average) relative std: ", np.std(scores['test_baseline_relative'])
+
+    print "Baseline (median) relative mean: ", np.mean(scores['test_baseline_median_relative'])
+    print "Baseline (median) relative std: ", np.std(scores['test_baseline_median_relative'])
 
     print "=== Absolute"
 
@@ -195,8 +192,12 @@ def print_score_summary(scores):
     print "RF abs std: ", np.std(scores['test_abs'])
 
     #print "Baseline: ", scores['test_baseline']
-    print "Baseline mean: ", np.mean(scores['test_baseline'])
-    print "Baseline std: ", np.std(scores['test_baseline'])
+    print "Baseline (average) mean: ", np.mean(scores['test_baseline'])
+    print "Baseline (average) std: ", np.std(scores['test_baseline'])
+
+    #print "Baseline: ", scores['test_baseline']
+    print "Baseline (median) mean: ", np.mean(scores['test_baseline_median'])
+    print "Baseline (median) std: ", np.std(scores['test_baseline_median'])
 
 def run_cross_validation_classification(features, target):
 
@@ -240,9 +241,14 @@ def run_cross_validation_regression(features, target):
     X = features
     y = target
     average_target = np.average(target)
+    median_target = np.median(target)
 
     def baseline_score_function (y_true, y_pred):
         errors_baseline = abs(average_target - y_true)
+        return np.mean(errors_baseline)
+
+    def baseline_median_error_function (y_true, y_pred):
+        errors_baseline = abs(median_target - y_true)
         return np.mean(errors_baseline)
 
     def relative_error_function (y_true, y_pred):
@@ -255,12 +261,19 @@ def run_cross_validation_regression(features, target):
         errors_relative = errors_absolute / y_true
         return np.mean(errors_relative)
 
+    def baseline_median_relative_error_function (y_true, y_pred):
+        errors_absolute = abs(median_target - y_true)
+        errors_relative = errors_absolute / y_true
+        return np.mean(errors_relative)
+
 
     rf = RandomForestRegressor(n_estimators = 500, n_jobs = -1)
 
     scorer = make_scorer(baseline_score_function)
     scorer2 = make_scorer(relative_error_function)
     scorer3 = make_scorer(baseline_relative_error_function)
+    scorer4 = make_scorer(baseline_median_relative_error_function)
+    scorer5 = make_scorer(baseline_median_error_function)
 
     cv = sklearn.model_selection.KFold(n_splits=10)
     splits = list(cv.split(X, y))
@@ -269,8 +282,10 @@ def run_cross_validation_regression(features, target):
                             scoring = {
                                 'abs': 'neg_mean_absolute_error',
                                 'baseline': scorer,
+                                'baseline_median': scorer5,
                                 'relative': scorer2,
-                                'baseline_relative': scorer3
+                                'baseline_relative': scorer3,
+                                'baseline_median_relative': scorer4
                             },
                             return_train_score=False, return_estimator = True)
 
@@ -299,24 +314,36 @@ def plot_predicted_vs_real_price_start(maxval):
 def plot_predicted_vs_real_price_end():
     plt.show()
 
-def print_mean_absolute_error(test_predictions, test_target, average_target):
+def print_mean_absolute_error(test_predictions, test_target, average_target, median_target):
+
     # Calculate the absolute errors
     errors = abs(test_predictions - test_target)
     errors_baseline = abs(average_target - test_target)
+    errors_baseline_median = abs(median_target - test_target)
+
+    # Relative errors
     errors_relative = errors/test_target
     errors_baseline_relative = errors_baseline/test_target
+    errors_baseline_median_relative = errors_baseline_median/test_target
+
     # Print out the mean absolute error (mae)
     print "== Absolute"
     print('Mean absolute prediction error: R$', round(np.mean(errors), 2))
     print('Std prediction error: R$', round(np.std(errors), 2))
     print('Mean absolute error using average: R$', round(np.mean(errors_baseline), 2))
     print('Std prediction error using average: R$', round(np.std(errors_baseline), 2))
+    print('Mean absolute error using median: R$', round(np.mean(errors_baseline_median), 2))
+    print('Std prediction error using median: R$', round(np.std(errors_baseline_median), 2))
+
     print "== Relative"
     print('Mean relative absolute prediction error: ', round(np.mean(errors_relative), 2))
     print('Std relative prediction error: ', round(np.std(errors_relative), 2))
     print('Mean relative absolute error using average: ', round(np.mean(errors_baseline_relative), 2))
     print('Std relative prediction error using average: ', round(np.std(errors_baseline_relative), 2))
-    return [errors, errors_baseline, errors_relative, errors_baseline_relative]
+    print('Mean absolute error using median: R$', round(np.mean(errors_baseline_median_relative), 2))
+    print('Std prediction error using median: R$', round(np.std(errors_baseline_median_relative), 2))
+
+    return [errors, errors_baseline, errors_relative, errors_baseline_relative, errors_baseline_median, errors_baseline_median_relative]
 
 def join_predicted_df(
     df,
@@ -326,7 +353,9 @@ def join_predicted_df(
     errors,
     errors_relative,
     errors_baseline,
-    errors_baseline_relative
+    errors_baseline_relative,
+    errors_baseline_median,
+    errors_baseline_median_relative
 ):
     data = {
         "all_features": test_features.tolist(),
@@ -336,7 +365,9 @@ def join_predicted_df(
         "error": errors,
         "error_relative": errors_relative,
         "error_baseline": errors_baseline,
-        "error_baseline_relative": errors_baseline_relative
+        "error_baseline_relative": errors_baseline_relative,
+        "error_baseline_median": errors_baseline_median,
+        "error_baseline_median_relative": errors_baseline_median_relative
     }
     predicted_df = pd.DataFrame(data = data)
     joined_predicted_df = predicted_df
@@ -437,10 +468,12 @@ def plot_histogram(sets, ymax = False):
     plt.figure(figsize=(8,8), dpi=130)
     max_frequency = 0
 
+    hists = []
     for dataset in sets:
         y = dataset[1]
         count = len(y)
         hist = np.histogram(y, np.linspace(0, ymax, 10))
+        hists.append(hist)
         normalized_hist = hist[0]/count
         centers = np.convolve(hist[1], [0.5, 0.5])
         centers = centers[1:-1]
@@ -453,6 +486,7 @@ def plot_histogram(sets, ymax = False):
     plt.ylabel(u'Frequência relativa')
     plt.xlabel(u'Probabilidade estimada de ligação')
     plt.show()
+    return [centers, hists]
 
 
 def print_classification_probability_distribution(y, y_pred):
