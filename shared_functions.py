@@ -19,7 +19,7 @@ import test_data
 def plot_confusion_matrix(cm, classes, std=False,
                           normalize=False,
                           title='Confusion matrix',
-                          cmap=plt.cm.Blues):
+                          cmap=plt.cm.Greens):
     """
     This function prints and plots the confusion matrix.
     Normalization can be applied by setting `normalize=True`.
@@ -40,7 +40,8 @@ def plot_confusion_matrix(cm, classes, std=False,
     plt.xticks(tick_marks, classes, rotation=45)
     plt.yticks(tick_marks, classes)
 
-    thresh = cm.max() / 2.
+    thresh = (cm.max() + cm.min()) / 2.
+
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
         if std is not False:
             text = '%.2f\n(%.2f)' % (cm[i, j], std[i, j])
@@ -55,8 +56,8 @@ def plot_confusion_matrix(cm, classes, std=False,
                  color="white" if cm[i, j] > thresh else "black")
 
     plt.tight_layout()
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
+    plt.ylabel('Classe verdadeira')
+    plt.xlabel('Classe prevista')
 
 def read_G(edges_csv_file, max_edges):
     lines = []
@@ -156,20 +157,22 @@ def prepare_datasets(df, numeric_features, categorical_features, target_column):
 
 def plot_relative_error_distribution(predicted_df):
     sets = [
-        ['Predicted', predicted_df.error_relative],
-        ['Baseline Average', predicted_df.error_baseline_relative],
-        ['Baseline Median', predicted_df.error_baseline_median_relative]
+        [u'Modelo', predicted_df.error_relative],
+        [u'Baseline 1 - Média', predicted_df.error_baseline_relative],
+        [u'Baseline 2 - Mediana', predicted_df.error_baseline_median_relative]
     ]
-    centers, hists = plot_histogram(sets, 2)
-    return [centers, hists[0][0], hists[1][0], hists[2][0]]
+    centers, hists = plot_histogram(sets, xlabel=u'Erro relativo', ymax=2)
+    return [centers, hists[0], hists[1], hists[2]]
 
 def plot_accumulated_relative_error(centers, normalized_hist_predicted, normalized_hist_baseline, normalized_hist_baseline_median):
     plt.figure(figsize=(8,8), dpi=130)
-    plt.plot(centers, accumulated_distribution(normalized_hist_predicted), label='Predicted')
-    plt.plot(centers, accumulated_distribution(normalized_hist_baseline), label='Baseline Average')
-    plt.plot(centers, accumulated_distribution(normalized_hist_baseline_median), label='Baseline Median')
-    plt.xlabel('Relative error')
-    plt.ylabel('Accumulated fraction')
+    
+    plt.plot(centers, accumulated_distribution(normalized_hist_predicted), marker='o', label=u'Modelo')
+    plt.plot(centers, accumulated_distribution(normalized_hist_baseline), marker='o', label=u'Baseline 1 - Média')
+    plt.plot(centers, accumulated_distribution(normalized_hist_baseline_median), marker='o', label=u'Baseline 2 - Mediana')
+
+    plt.xlabel(u'Erro relativo')
+    plt.ylabel(u'Frequência relativa acumulada')
     plt.legend(loc='lower right')
     plt.show()
 
@@ -214,15 +217,6 @@ def run_cross_validation_classification(features, target):
         0: (class_weight(1)/len(target))*1E0,
         1: (class_weight(0)/len(target))*1E7
     }
-
-    #print class_weights
-
-    #class_weights = {
-    #    0: 0.5,
-    #    1: 0.5
-    #}
-
-    #class_weights = 'balanced'
 
     cv = sklearn.model_selection.StratifiedKFold(n_splits=10)
     splits = list(cv.split(X, y))
@@ -293,23 +287,43 @@ def run_cross_validation_regression(features, target):
     rf = scores['estimator'][0]
     return [scores['estimator'], splits, scores]
 
-def plot_predicted_vs_real_price(test_target, test_predictions, target):
-    plot_predicted_vs_real_price_start(np.max(target))
+def plot_predicted_vs_real_price(test_target, test_predictions, target, title, xlabel, ylabel, legend, labels = {}, zoomY = False):
+
+    try:
+        max = np.max(target)
+    except:
+        max = None
+
+    plot_predicted_vs_real_price_start(max, title, xlabel, ylabel, legend, labels)
     plt.scatter(test_target, test_predictions, 100, alpha=0.05, edgecolors="none")
     plot_predicted_vs_real_price_end()
 
-def plot_predicted_vs_real_price_start(maxval):
-    #plt.xlim(0, 150)
-    #plt.ylim(0, 150)
+    if zoomY:
+        plot_predicted_vs_real_price_start(max, title, xlabel, ylabel, legend, labels, zoomY)
+        plt.scatter(test_target, test_predictions, 100, alpha=0.05, edgecolors="none")
+        plot_predicted_vs_real_price_end()
+
+def plot_predicted_vs_real_price_start(maxval, title, xlabel, ylabel, legend, labels = {}, zoomY = False):
     plt.figure(figsize=(8,8), dpi=130)
+    if (len(labels)):
+        plt.xticks(labels.keys(), labels.values())
+
     baseline = [0, maxval]
-    plt.plot(baseline, baseline, "--", color="green", label = u"Preço previsto = Preço real")
+    if legend:
+        plt.plot(baseline, baseline, "--", color="green", label = legend)
     ax = plt.gca()
-    ax.set_ylabel(u"Preço previsto (R$)")
-    ax.set_xlabel(u"Preço real (R$)")
-    ax.legend()
-    plt.title(u"Preço previsto vs. Preço real")
-    plt.axes().set_aspect('equal', 'datalim')
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel(xlabel)
+    if legend:
+        ax.legend()
+    plt.title(title)
+    if zoomY:
+        plt.xlim(0, zoomY) 
+        plt.ylim(0, zoomY)
+    if not labels:
+        plt.axes().set_aspect('equal', 'datalim')
+    else:
+        plt.xlim(-1, 2)
 
 def plot_predicted_vs_real_price_end():
     plt.show()
@@ -420,9 +434,9 @@ def plot_splits_confusion_matrices(X, y, splits, estimators, threshold = 0.5):
         )
         confusion_matrices.append(cnf_matrix)
 
-        plt.figure()
-        plot_confusion_matrix(cnf_matrix, normalize=False, classes=['Does not have link to node 1', 'Has link to node 1'],
-                              title=('Split %i - Confusion matrix for probability threshold p = %.2f' % (i+1, threshold)))
+        plt.figure(figsize=(8,8), dpi=130)
+        title = u'Split %i - Matriz de confusão\npara limiar de classificação p = %.2f' % (i+1, threshold)
+        plot_confusion_matrix(cnf_matrix, normalize=False, classes=[u'Sem ligação', u'Com ligação'], title=title)
         plt.show()
 
     cf2d = [row.reshape(4) for row in confusion_matrices]
@@ -431,9 +445,9 @@ def plot_splits_confusion_matrices(X, y, splits, estimators, threshold = 0.5):
     cnf_matrix_mean = df.mean().values.reshape(2, 2)
     cnf_matrix_std = df.std().values.reshape(2, 2)
 
-    plt.figure()
-    plot_confusion_matrix(cnf_matrix_mean, std = cnf_matrix_std, normalize=True, classes=['Does not have link to node 1', 'Has link to node 1'],
-                          title=('Mean confusion matrix for probability threshold p = %.2f' % (threshold)))
+    plt.figure(figsize=(8,8), dpi=130)
+    plot_confusion_matrix(cnf_matrix_mean, std = cnf_matrix_std, normalize=True, classes=[u'Sem ligação', u'Com ligação'],
+                          title=(u'Matriz de confusão agregada (média)\npara limiar de classificação p = %.2f' % (threshold)))
     plt.show()
 
 def get_all_predictions_from_splits(X, y, splits, estimators):
@@ -457,10 +471,10 @@ def get_all_predictions_from_splits(X, y, splits, estimators):
 
     return [x[1] for x in all_preds]
 
-def plot_splits_predicted_vs_real(y, y_pred):
-    plot_predicted_vs_real_price(y, y_pred, y)
+def plot_splits_predicted_vs_real(y, y_pred, title, xlabel, ylabel, legend, labels = {}, zoomY = False):
+    plot_predicted_vs_real_price(y, y_pred, y, title, xlabel, ylabel, legend, labels, zoomY)
 
-def plot_histogram(sets, ymax = False):
+def plot_histogram(sets, xlabel='', ymax = False, nbins=10):
 
     if not ymax:
         ymax = max([max(x[1]) for x in sets])
@@ -472,19 +486,19 @@ def plot_histogram(sets, ymax = False):
     for dataset in sets:
         y = dataset[1]
         count = len(y)
-        hist = np.histogram(y, np.linspace(0, ymax, 10))
-        hists.append(hist)
+        hist = np.histogram(y, np.linspace(0, ymax, nbins))
         normalized_hist = hist[0]/count
+        hists.append(normalized_hist)
         centers = np.convolve(hist[1], [0.5, 0.5])
         centers = centers[1:-1]
         #plt.bar(centers, normalized_hist, width=(centers[1]-centers[0])*0.95)
-        plt.plot(centers, normalized_hist, label = dataset[0])
+        plt.plot(centers, normalized_hist, label = dataset[0], marker='o')
         max_frequecy = max([max_frequency, max(hist[0]/count) * 1.1])
 
     ylim = max_frequency
     plt.legend(loc='lower right')
     plt.ylabel(u'Frequência relativa')
-    plt.xlabel(u'Probabilidade estimada de ligação')
+    plt.xlabel(xlabel)
     plt.show()
     return [centers, hists]
 
@@ -494,7 +508,7 @@ def print_classification_probability_distribution(y, y_pred):
     print y_pred.shape
     class0 = [x == 0 for x in y]
     class1 = [x == 1 for x in y]
-    plot_histogram([[u'Sem ligação', y_pred[class0]], [u'Com ligação', y_pred[class1]]])
+    plot_histogram([[u'Sem ligação', y_pred[class0]], [u'Com ligação', y_pred[class1]]], xlabel=u'Probabilidade estimada de ligação pelo modelo')
 
 def plot_roc_curve(target, y_pred):
     steps = 1001
