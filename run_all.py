@@ -3,7 +3,9 @@ import papermill as pm
 # Experiment 1 - Price - Execution time
 
 list_n_estimators = [10, 20, 40, 80]
-list_max_edges = [10000, 20000, 40000, 80000, 160000]
+list_n_estimators = [10]
+list_max_edges = [0, 10000, 20000, 40000, 80000, 160000]
+list_max_edges = [0]
 list_features = ['all']
 
 param_list = [
@@ -16,7 +18,8 @@ param_list = [
 for params in param_list:
     pm.execute_notebook(
        'price_1_basic_analysis.ipynb',
-       'results/price_1_basic_analysis_%s_%s_%s.ipynb' % (params['max_edges'], params['n_estimators'], params['features']),
+       'results/price_1_basic_analysis_edges-%s_estimators-%s_features-%s.ipynb'
+           % (params['max_edges'], params['n_estimators'], params['features']),
        parameters=params
     )
 
@@ -36,7 +39,8 @@ param_list = [
 for params in param_list:
     pm.execute_notebook(
        'price_1_basic_analysis.ipynb',
-       'results/price_1_basic_analysis_%s_%s_%s.ipynb' % (params['max_edges'], params['n_estimators'], params['features']),
+       'results/price_1_basic_analysis_edges-%s_estimators-%s_features-%s.ipynb'
+           % (params['max_edges'], params['n_estimators'], params['features']),
        parameters=params
     )
 
@@ -45,6 +49,7 @@ for params in param_list:
 for params in param_list:
     pm.execute_notebook(
        'predict_links.ipynb',
-       'results/predict_links_%s_%s_%s.ipynb' % (params['max_edges'], params['n_estimators'], params['features']),
+       'results/predict_links_edges-%s_estimators-%s_features-%s.ipynb'
+           % (params['max_edges'], params['n_estimators'], params['features']),
        parameters=params
     )
