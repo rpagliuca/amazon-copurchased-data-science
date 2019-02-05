@@ -202,7 +202,7 @@ def print_score_summary(scores):
     print "Baseline (median) mean: ", np.mean(scores['test_baseline_median'])
     print "Baseline (median) std: ", np.std(scores['test_baseline_median'])
 
-def run_cross_validation_classification(features, target, n_estimators = 500):
+def run_cross_validation_classification(features, target, n_estimators = 20):
 
     X = features
     y = target
@@ -230,7 +230,7 @@ def run_cross_validation_classification(features, target, n_estimators = 500):
 
     return [scores['estimator'], splits, scores]
 
-def run_cross_validation_regression(features, target, n_estimators = 40):
+def run_cross_validation_regression(features, target, n_estimators = 20):
 
     X = features
     y = target
