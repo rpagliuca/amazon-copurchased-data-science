@@ -3,9 +3,7 @@ import papermill as pm
 # Experiment 1 - Price - Execution time
 
 list_n_estimators = [10, 20, 40, 80]
-list_n_estimators = [10]
-list_max_edges = [0, 10000, 20000, 40000, 80000, 160000]
-list_max_edges = [0]
+list_max_edges = [10000, 20000, 40000, 80000, 160000]
 list_features = ['all']
 
 param_list = [
