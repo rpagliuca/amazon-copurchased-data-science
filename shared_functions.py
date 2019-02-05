@@ -202,7 +202,7 @@ def print_score_summary(scores):
     print "Baseline (median) mean: ", np.mean(scores['test_baseline_median'])
     print "Baseline (median) std: ", np.std(scores['test_baseline_median'])
 
-def run_cross_validation_classification(features, target):
+def run_cross_validation_classification(features, target, n_estimators = 500):
 
     X = features
     y = target
@@ -221,7 +221,7 @@ def run_cross_validation_classification(features, target):
     cv = sklearn.model_selection.StratifiedKFold(n_splits=10)
     splits = list(cv.split(X, y))
 
-    rf = RandomForestClassifier(n_estimators = 500, class_weight=class_weights, n_jobs = -1)
+    rf = RandomForestClassifier(n_estimators, class_weight=class_weights, n_jobs = -1)
     scores = cross_validate(estimator=rf, X=features, y=target, cv=splits,
                             scoring = {
                                 'abs': 'neg_mean_absolute_error',
@@ -230,7 +230,7 @@ def run_cross_validation_classification(features, target):
 
     return [scores['estimator'], splits, scores]
 
-def run_cross_validation_regression(features, target):
+def run_cross_validation_regression(features, target, n_estimators = 40):
 
     X = features
     y = target
@@ -261,7 +261,7 @@ def run_cross_validation_regression(features, target):
         return np.mean(errors_relative)
 
 
-    rf = RandomForestRegressor(n_estimators = 500, n_jobs = -1)
+    rf = RandomForestRegressor(n_estimators, n_jobs = -1)
 
     scorer = make_scorer(baseline_score_function)
     scorer2 = make_scorer(relative_error_function)
